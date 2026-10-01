@@ -81,6 +81,29 @@ COLUMNAS_EXTRA = {
 }
 
 
+def _insertar_habilidad(con, nombre, tipo):
+    """Inserta en Habilidades respetando columnas NOT NULL y CHECK de la tabla existente."""
+    if con.execute("SELECT 1 FROM Habilidades WHERE lower(nombre)=lower(?)", (nombre,)).fetchone():
+        return
+    extra = {}
+    for col in con.execute("PRAGMA table_info(Habilidades)").fetchall():
+        if col["name"] in ("nombre", "tipo") or col["pk"]:
+            continue
+        if col["notnull"] and col["dflt_value"] is None:
+            extra[col["name"]] = 0 if "INT" in (col["type"] or "").upper() else "General"
+    previos = [r[0] for r in con.execute("SELECT DISTINCT tipo FROM Habilidades WHERE tipo IS NOT NULL")]
+    ultimo = None
+    for t in [tipo, *previos, None]:
+        cols = ["nombre", "tipo", *extra]
+        vals = [nombre, t, *extra.values()]
+        try:
+            con.execute(f"INSERT INTO Habilidades({','.join(cols)}) VALUES({','.join('?' * len(cols))})", vals)
+            return
+        except sqlite3.IntegrityError as e:
+            ultimo = e
+    raise RuntimeError(f"No pude insertar '{nombre}' en Habilidades: {ultimo}. Revisa las restricciones de esa tabla.")
+
+
 @st.cache_resource
 def ensure_schema():
     with db() as con:
@@ -92,11 +115,7 @@ def ensure_schema():
                     con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col} {tipo}")
         for lista, tipo in ((HAB_PRACTICAS, "practica"), (FORTALEZAS, "fortaleza")):
             for nombre in lista:
-                con.execute(
-                    "INSERT INTO Habilidades(nombre, tipo) SELECT ?, ? "
-                    "WHERE NOT EXISTS (SELECT 1 FROM Habilidades WHERE nombre=?)", (nombre, tipo, nombre))
-                con.execute(
-                    "UPDATE Habilidades SET tipo=? WHERE nombre=? AND (tipo IS NULL OR tipo='')", (tipo, nombre))
+                _insertar_habilidad(con, nombre, tipo)
     return True
 
 
@@ -529,8 +548,8 @@ def page_candidatas():
         filas.append((r, int(round(100 * (ms if ms > 0 else 0.6 * sh + 0.4 * ss)))))
     for pos, (r, pct) in enumerate(sorted(filas, key=lambda x: -x[1]), start=1):
         hs = q("SELECT h.nombre, h.tipo FROM Usuaria_Habilidad uh JOIN Habilidades h ON h.id=uh.habilidad_id WHERE uh.usuaria_id=?", (r.id,))
-        fort = hs[hs["tipo"] == "fortaleza"]["nombre"].tolist()
-        prac = hs[hs["tipo"] != "fortaleza"]["nombre"].tolist()
+        fort = hs[hs["nombre"].isin(FORTALEZAS)]["nombre"].tolist()
+        prac = hs[~hs["nombre"].isin(FORTALEZAS)]["nombre"].tolist()
         with st.container(border=True):
             a, b = st.columns([5, 1.3])
             a.markdown(
