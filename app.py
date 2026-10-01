@@ -176,7 +176,7 @@ st.markdown(css_code, unsafe_allow_html=True)
 DB_PATH = "mi_turno.db"
 
 def get_db_cursor():
-    """Conexión segura que retorna filas tipo Diccionario para evitar IndexError."""
+    """Conexión segura que retorna filas tipo Diccionario."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -220,16 +220,42 @@ def init_db():
     if cur.execute("SELECT COUNT(*) FROM Usuarias").fetchone()[0] == 0:
         cur.execute("INSERT INTO Usuarias (nombre, email, telefono, comuna) VALUES ('Juliana Guzmán', 'juliana@email.com', '+56912345678', 'La Pintana')")
         cur.execute("INSERT INTO Usuarias (nombre, email, telefono, comuna) VALUES ('Camila Soto', 'camila@email.com', '+56987654321', 'Maipú')")
-    
-    if cur.execute("SELECT COUNT(*) FROM Vacantes").fetchone()[0] == 0:
-        cur.execute("INSERT INTO Vacantes (titulo, empresa, comuna, horario, sueldo, requiere_capacitacion, curso_sugerido) VALUES ('Asistente de ventas', 'Comercial Vida', 'La Cisterna', 'Lunes a viernes • 09:00–14:00', 320000, 0, '')")
-        cur.execute("INSERT INTO Vacantes (titulo, empresa, comuna, horario, sueldo, requiere_capacitacion, curso_sugerido) VALUES ('Atención al cliente', 'Servicios Norte', 'El Bosque', 'Sábado y domingo • 10:00–18:00', 180000, 1, 'Atención al cliente (40 hrs)')")
-        cur.execute("INSERT INTO Vacantes (titulo, empresa, comuna, horario, sueldo, requiere_capacitacion, curso_sugerido) VALUES ('Apoyo en tienda', 'Mercado Local', 'La Pintana', 'Turnos rotativos', 280000, 1, 'Manipulación de alimentos (8 hrs)')")
 
     conn.commit()
     conn.close()
 
 init_db()
+
+# Función auxiliar para extraer datos de la vacante probando varios nombres posibles
+def parse_vacante(v):
+    v_dict = dict(v)
+    
+    # Búsqueda flexible de campos por si difieren en la DB existente
+    id_v = v_dict.get('id_vacante') or v_dict.get('id') or 1
+    titulo = v_dict.get('titulo') or v_dict.get('nombre_vacante') or 'Oportunidad Flexible'
+    empresa = v_dict.get('empresa') or v_dict.get('nombre_empresa') or 'Empresa Aliada'
+    comuna = v_dict.get('comuna') or v_dict.get('ubicacion') or 'Santiago'
+    horario = v_dict.get('horario') or v_dict.get('jornada') or 'Turnos Flexibles'
+    
+    sueldo_val = v_dict.get('sueldo') or v_dict.get('pago') or v_dict.get('monto') or 0
+    try:
+        sueldo = int(sueldo_val)
+    except:
+        sueldo = 0
+        
+    req_cap = bool(v_dict.get('requiere_capacitacion') or v_dict.get('capacitacion'))
+    curso = v_dict.get('curso_sugerido') or v_dict.get('curso') or ''
+
+    return {
+        'id_vacante': id_v,
+        'titulo': titulo,
+        'empresa': empresa,
+        'comuna': comuna,
+        'horario': horario,
+        'sueldo': sueldo,
+        'requiere_capacitacion': req_cap,
+        'curso_sugerido': curso
+    }
 
 # Listas predefinidas
 HABILIDADES_PRACTICAS = ["Cuidado de niños", "Cuidado de adultos mayores", "Aseo y sanitización", "Cocina casera", "Lavado y planchado", "Atención al público", "Reposición de stock", "Costura y arreglos"]
@@ -280,9 +306,8 @@ if rol == "Soy Postulante":
         vacantes_rows = conn.execute("SELECT * FROM Vacantes").fetchall()
         conn.close()
 
-        # Convertir de manera segura a listas de diccionarios
         usuarias = [dict(u) for u in usuarias_rows]
-        vacantes = [dict(v) for v in vacantes_rows]
+        raw_vacantes = [dict(v) for v in vacantes_rows]
 
         if usuarias:
             u_dict = {f"{u.get('nombre', 'Usuaria')} ({u.get('comuna', 'Sin Comuna')})": u for u in usuarias}
@@ -294,14 +319,15 @@ if rol == "Soy Postulante":
             with col_main:
                 st.markdown(f"### Oportunidades seleccionadas para {u_activa.get('nombre')}")
 
-                for v in vacantes:
-                    # Muestra de cálculo defensivo de match
+                for idx, raw_v in enumerate(raw_vacantes):
+                    v = parse_vacante(raw_v)
+                    
                     comuna_u = str(u_activa.get('comuna', '')).strip().lower()
-                    comuna_v = str(v.get('comuna', '')).strip().lower()
+                    comuna_v = str(v['comuna']).strip().lower()
 
                     if motor_match and hasattr(motor_match, 'calcular_match'):
                         try:
-                            res = motor_match.calcular_match(u_activa.get('id_usuaria'), v.get('id_vacante'))
+                            res = motor_match.calcular_match(u_activa.get('id_usuaria'), v['id_vacante'])
                             match_pct = res.get('porcentaje', 85)
                         except:
                             match_pct = 92 if comuna_u == comuna_v else 78
@@ -314,26 +340,29 @@ if rol == "Soy Postulante":
                     c_card, c_ring, c_why = st.columns([2.2, 0.9, 1.3])
 
                     with c_card:
+                        sueldo_str = f"${v['sueldo']:,}" if v['sueldo'] > 0 else "A convenir"
                         st.markdown(f"""
                         <div class="job-card-container">
-                            <div class="job-title">{v.get('titulo')}</div>
-                            <div class="job-company">{v.get('empresa')} • {v.get('comuna')}</div>
+                            <div class="job-title">{v['titulo']}</div>
+                            <div class="job-company">{v['empresa']} • {v['comuna']}</div>
                             <div style="font-size: 0.88rem; color: #555; margin-bottom: 8px;">
-                                🕒 {v.get('horario')} | 💰 ${v.get('sueldo', 0):,} approx.
+                                🕒 {v['horario']} | 💰 {sueldo_str} approx.
                             </div>
                             <div>
                                 <span class="badge badge-gold">{proximidad}</span>
                                 <span class="badge badge-green">🟢 Horario disponible</span>
-                                {"<span class='badge badge-orange'>🟠 Requiere capacitación</span>" if v.get('requiere_capacitacion') else "<span class='badge badge-purple'>✨ Sin capacitación previa</span>"}
+                                {"<span class='badge badge-orange'>🟠 Requiere capacitación</span>" if v['requiere_capacitacion'] else "<span class='badge badge-purple'>✨ Sin capacitación previa</span>"}
                             </div>
-                            {f"<div style='font-size:0.78rem; color:#C96B5B; margin-top:6px;'>📚 <i>Curso sugerido: {v.get('curso_sugerido')}</i></div>" if v.get('requiere_capacitacion') and v.get('curso_sugerido') else ""}
+                            {f"<div style='font-size:0.78rem; color:#C96B5B; margin-top:6px;'>📚 <i>Curso sugerido: {v['curso_sugerido']}</i></div>" if v['requiere_capacitacion'] and v['curso_sugerido'] else ""}
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        if st.button("Postular a Oportunidad", key=f"btn_p_{v.get('id_vacante')}"):
+                        # Clave única infalible usando enumerate (idx) + id_vacante
+                        button_key = f"btn_postular_{idx}_{v['id_vacante']}"
+                        if st.button("Postular a Oportunidad", key=button_key):
                             conn = get_db_cursor()
                             conn.execute("INSERT INTO Postulaciones (id_usuaria, id_vacante, fecha_postulacion) VALUES (?, ?, ?)",
-                                         (u_activa.get('id_usuaria'), v.get('id_vacante'), datetime.now().strftime("%Y-%m-%d")))
+                                         (u_activa.get('id_usuaria'), v['id_vacante'], datetime.now().strftime("%Y-%m-%d")))
                             conn.commit()
                             conn.close()
                             st.success("¡Postulación enviada exitosamente!")
@@ -367,7 +396,7 @@ if rol == "Soy Postulante":
                 <div class="profile-card-right">
                     <h3 style="color:#432C46; margin-top:0;">Tu perfil profesional</h3>
                     <p style="font-size:0.9rem; margin-bottom:4px;"><strong>{u_activa.get('nombre')}</strong></p>
-                    <p style="font-size:0.8rem; color:#666;">📍 {u_activa.get('comuna')} | ✉️️ {u_activa.get('email')}</p>
+                    <p style="font-size:0.8rem; color:#666;">📍 {u_activa.get('comuna')} | ✉ {u_activa.get('email')}</p>
                     
                     <div style="background-color: #EBF3ED; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; color: #3E5C46; font-weight: bold; display: inline-block; margin-bottom: 15px;">
                         ✔ Perfil 85% completo
@@ -470,7 +499,7 @@ else:
         vacantes_list = [dict(v) for v in conn.execute("SELECT * FROM Vacantes").fetchall()]
 
         if vacantes_list:
-            v_opts = {f"{v['titulo']} - {v['empresa']}": v['id_vacante'] for v in vacantes_list}
+            v_opts = {f"{v.get('titulo', 'Vacante')} - {v.get('empresa', 'Empresa')}": v.get('id_vacante', 1) for v in vacantes_list}
             v_sel = st.selectbox("Selecciona Vacante para revisar:", list(v_opts.keys()))
             id_v = v_opts[v_sel]
 
@@ -490,7 +519,7 @@ else:
 
                     st.markdown(f"""
                     <div style="background:white; padding:18px; border-radius:12px; border-left:6px solid #C96B5B; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-                        <div style="display:flex; justify-shadow:space-between; align-items:center;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
                             <h3 style="margin:0; color:#432C46;">{cand.get('nombre')}</h3>
                             <span class="badge badge-gold">⭐ 94% Match</span>
                         </div>
