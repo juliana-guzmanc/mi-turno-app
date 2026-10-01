@@ -90,7 +90,7 @@ css_code = """
         background-color: #FFFFFF;
         border-radius: 14px;
         padding: 20px;
-        margin-bottom: 20px;
+        margin-bottom: 12px;
         border: 1px solid #EAE5DC;
         box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     }
@@ -230,7 +230,6 @@ init_db()
 def parse_vacante(v):
     v_dict = dict(v)
     
-    # Búsqueda flexible de campos por si difieren en la DB existente
     id_v = v_dict.get('id_vacante') or v_dict.get('id') or 1
     titulo = v_dict.get('titulo') or v_dict.get('nombre_vacante') or 'Oportunidad Flexible'
     empresa = v_dict.get('empresa') or v_dict.get('nombre_empresa') or 'Empresa Aliada'
@@ -357,7 +356,6 @@ if rol == "Soy Postulante":
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Clave única infalible usando enumerate (idx) + id_vacante
                         button_key = f"btn_postular_{idx}_{v['id_vacante']}"
                         if st.button("Postular a Oportunidad", key=button_key):
                             conn = get_db_cursor()
@@ -388,9 +386,9 @@ if rol == "Soy Postulante":
                         </div>
                         """, unsafe_allow_html=True)
 
-                    st.markdown("---")
+                    st.markdown("<br>", unsafe_allow_html=True)
 
-            # Panel Lateral Derecho (Fiel a la maqueta ENCAJA)
+            # Panel Lateral Derecho
             with col_right:
                 st.markdown(f"""
                 <div class="profile-card-right">
