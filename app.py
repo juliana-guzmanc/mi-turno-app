@@ -570,7 +570,20 @@ def page_candidatas():
 # ----------------------------------------------------------------------------
 def main():
     st.set_page_config(page_title=MARCA, page_icon="🧡", layout="wide")
-    ensure_schema()
+    try:
+        ensure_schema()
+    except Exception as e:
+        st.error(f"No pude preparar la tabla Habilidades: {e}")
+        with db() as con:
+            ddl = [r[0] for r in con.execute("SELECT sql FROM sqlite_master WHERE name='Habilidades'")]
+        st.markdown("**Definición de la tabla (envíame esto):**")
+        st.code("\n".join(ddl) or "(la tabla no existe)", language="sql")
+        try:
+            st.markdown("**Primeras filas:**")
+            st.dataframe(q("SELECT * FROM Habilidades LIMIT 10"))
+        except Exception:
+            pass
+        st.stop()
     st.markdown(CSS, unsafe_allow_html=True)
     with st.sidebar:
         st.markdown(f"## {MARCA}")
